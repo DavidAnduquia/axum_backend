@@ -7,6 +7,8 @@ pub struct Config {
     pub port: u16,
     pub jwt_secret: String,
     pub environment: Environment,
+    pub fcm_project_id: Option<String>,
+    pub fcm_credentials_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,6 +34,14 @@ impl Config {
         let jwt_secret = env::var("JWT_SECRET")
             .unwrap_or_else(|_| "your-secret-key-change-in-production".into());
 
+        let fcm_project_id = env::var("FCM_PROJECT_ID")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+
+        let fcm_credentials_path = env::var("FCM_CREDENTIALS_FILE")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+
         let environment = env::var("ENVIRONMENT")
             .ok()
             .and_then(|e| match e.to_lowercase().as_str() {
@@ -47,6 +57,8 @@ impl Config {
             port,
             jwt_secret,
             environment,
+            fcm_project_id,
+            fcm_credentials_path,
         })
     }
 }

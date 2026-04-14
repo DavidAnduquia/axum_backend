@@ -28,6 +28,8 @@ pub struct Model {
     pub token_primer_ingreso: Option<DateTime<Utc>>,
     #[sea_orm(column_name = "fecha_eliminacion")]
     pub fecha_eliminacion: Option<DateTime<Utc>>,
+    #[sea_orm(column_name = "device_token", nullable)]
+    pub device_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,6 +37,18 @@ pub struct UsuarioConRol {
     #[serde(flatten)]
     pub usuario: Model,
     pub rol: super::rol::Model,
+}
+
+/// Información de usuario conectado para el panel de administración
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsuarioConectadoInfo {
+    pub id: i32,
+    pub nombre: String,
+    pub correo: String,
+    pub documento_nit: String,
+    pub rol: String,
+    pub fecha_ultima_conexion: DateTime<Utc>,
+    pub activo: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

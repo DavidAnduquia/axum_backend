@@ -6,7 +6,7 @@ use std::sync::Arc;
 use utoipa::ToSchema;
 use validator::Validate;
 
-use crate::{config::Config, database::DbExecutor};
+use crate::{config::Config, database::DbExecutor, services::firebaseapp::FirebaseAppHandle};
 pub mod actividad;
 pub mod actividad_entrega;
 pub mod area_conocimiento;
@@ -26,6 +26,7 @@ pub mod modulo;
 pub mod modulo_archivo;
 pub mod notificacion;
 pub mod personalizacion_portafolio;
+pub mod reporte_error;
 pub mod plantilla_curso;
 pub mod portafolio;
 pub mod portafolio_contenido;
@@ -44,6 +45,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub jwt_encoding_key: Arc<EncodingKey>,
     pub jwt_decoding_key: Arc<DecodingKey>,
+    pub firebase: Option<FirebaseAppHandle>,
 }
 
 impl AppState {
@@ -81,6 +83,8 @@ pub struct User {
     pub name: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub rol_id: i32,
 }
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]
@@ -98,6 +102,8 @@ pub struct LoginRequest {
     #[validate(email)]
     pub email: String,
     pub password: String,
+    #[serde(default)]
+    pub device_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -114,6 +120,8 @@ pub struct UserResponse {
     pub name: String,
     #[schema(value_type = String, format = "date-time")]
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub rol_id: i32,
 }
 
 impl From<User> for UserResponse {
@@ -123,6 +131,7 @@ impl From<User> for UserResponse {
             email: user.email,
             name: user.name,
             created_at: user.created_at,
+            rol_id: user.rol_id,
         }
     }
 }

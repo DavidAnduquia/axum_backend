@@ -131,7 +131,7 @@ pub async fn guardar_portada_curso(
                     orden_componentes: None,
                     privacidad_componentes: None,
                 },
-            )
+            )   
             .await?;
 
         Ok(Json(PortadaCursoResponse {

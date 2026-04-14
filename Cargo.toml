@@ -24,7 +24,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Database (SQLx with PostgreSQL) - Versión compatible con SeaORM 1.1
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "macros", "migrate"] }
 
 # UUID and time handling
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -39,6 +39,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # WebSockets (axum ya incluye ws features arriba)
+futures-util = { version = "0.3", features = ["sink"] }
 
 # Cron jobs (para tareas programadas)
 tokio-cron-scheduler = "0.9"
@@ -61,7 +62,8 @@ utoipa = "4.0"
 
 # Testing
 once_cell = "1.19.0"
- 
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"
@@ -80,5 +82,5 @@ debug = false
 panic = "abort"  # Reduce binary size
 codegen-units = 16
 lto = "thin"
-incremental = true
+incremental = false
 strip = true  # Remove debug symbols

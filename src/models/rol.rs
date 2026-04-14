@@ -30,7 +30,7 @@ impl AutoMigrate for Entity {
 
     fn seed_data() -> Option<Vec<String>> {
         Some(vec![r#"
-            INSERT INTO rustdema.roles (nombre) 
+            INSERT INTO rustdema2.roles (nombre) 
             VALUES ('admin'), ('user'), ('moderator')
             ON CONFLICT (nombre) DO NOTHING
             "#

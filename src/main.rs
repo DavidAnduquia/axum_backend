@@ -17,6 +17,7 @@ mod utils;
 use config::Config;
 use database::{seeder, seed_users, DbExecutor, init_schema};
 use routes::create_app;
+use services::firebaseapp::FirebaseAppService;
 
 #[tokio::main(worker_threads = 2)]
 //use std::io;
@@ -42,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Ejecutar migraciones iniciales para preparar tablas requeridas
-            if let Err(e) = seeder::run_migrations(&pool, &config.database_url).await {
+            if let Err(e) = seeder::run_migrations(&config.database_url).await {
                 tracing::error!("❌ Migraciones fallaron: {}", e);
                 return Err(e.into());
             }
@@ -72,11 +73,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jwt_encoding_key = Arc::new(jsonwebtoken::EncodingKey::from_secret(jwt_secret));
     let jwt_decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_secret(jwt_secret));
 
+    let firebase = match (
+        &config.fcm_credentials_path,
+        &config.fcm_project_id,
+    ) {
+        (Some(path), project) => {
+            match FirebaseAppService::from_credentials_file(project.clone(), path).await {
+                Ok(service) => {
+                    tracing::info!("FCM service ready: {}", service.summary());
+                    tracing::info!("✅ FCM inicializado correctamente para el proyecto");
+                    Some(Arc::new(service))
+                }
+                Err(err) => {
+                    tracing::error!("❌ No se pudo inicializar FCM: {}", err);
+                    None
+                }
+            }
+        }
+        _ => {
+            tracing::warn!(
+                "⚠️  FCM no configurado. Define FCM_PROJECT_ID y FCM_CREDENTIALS_FILE para habilitarlo"
+            );
+            None
+        }
+    };
+
     let app_state = models::AppState {
         db: db_executor,
         config: Arc::clone(&config),
         jwt_encoding_key,
         jwt_decoding_key,
+        firebase,
     };
 
     // Medición definitiva de Arc
@@ -102,7 +129,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .allow_origin([
                             "http://localhost:8080".parse().unwrap(), // Frontend Dioxus
                             "http://127.0.0.1:8080".parse().unwrap(), // Frontend alternativo
-                            "http://192.168.1.9".parse().unwrap(),   // Frontend Android en LAN
+                            "http://192.168.1.11".parse().unwrap(),   // Frontend Android en LAN
+                            "http://192.168.1.5:8080".parse().unwrap(), // Frontend Android actual
                         ]) // Orígenes específicos para desarrollo
                         .allow_methods([
                             Method::GET,

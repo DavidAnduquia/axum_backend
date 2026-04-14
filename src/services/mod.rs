@@ -2,6 +2,7 @@ pub mod actividad_service;
 pub mod area_conocimiento_service;
 pub mod cron_service; // /* Cambio nuevo */ Agregar cron_service al módulo
 pub mod curso_service;
+pub mod firebaseapp;
 pub mod examen_service;
 pub mod matricula_service;
 pub mod modulo_service;
@@ -23,6 +24,7 @@ pub mod contenido_unidad_service;
 pub mod notificacion_service;
 pub mod portafolio_service;
 pub mod portafolio_contenido_service;
+pub mod reporte_error_service;
 pub mod personalizacion_portafolio_service;
 // pub mod pregunta_examen_service;
 // pub mod profesor_curso_service;

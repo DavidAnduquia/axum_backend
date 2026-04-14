@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 use bcrypt::{hash, DEFAULT_COST};
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 
 /// Inserta usuarios de prueba en la base de datos
 pub async fn seed_users(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
@@ -9,7 +9,7 @@ pub async fn seed_users(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>>
     // Crear roles por defecto si no existen
     let roles = vec![
         "Administrador",
-        "Profesor", 
+        "Profesor",
         "Estudiante",
         "Invitado",
     ];
@@ -50,11 +50,11 @@ pub async fn seed_users(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>>
         if exists.is_none() {
             // Hashear contraseña
             let password_hash = hash(password, DEFAULT_COST)?;
-            
+
             // Fecha de nacimiento por defecto (30 años)
             let fecha_nacimiento = NaiveDate::from_ymd_opt(1994, 1, 1)
                 .ok_or("Invalid date")?;
-            
+
             // Insertar usuario con todos los campos requeridos
             sqlx::query(
                 r#"

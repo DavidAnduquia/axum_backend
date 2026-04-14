@@ -11,6 +11,27 @@
 
 -- DROP TABLE rustdema2.areas_conocimiento;
 
+CREATE OR REPLACE FUNCTION actualizar_fecha_modificacion()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.fecha_actualizacion := NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TYPE rustdema2.tipo_evaluacion AS ENUM (
+    'parcial',
+    'final',
+    'taller',
+    'quiz'
+);
+
+CREATE TYPE rustdema2.tipo_pregunta AS ENUM (
+    'opcion_multiple',
+    'verdadero_falso',
+    'respuesta_abierta'
+);
+
 CREATE TABLE rustdema2.areas_conocimiento (
 	id serial4 NOT NULL,
 	nombre varchar(100) NOT NULL,
@@ -121,8 +142,10 @@ CREATE TABLE rustdema2.usuarios (
 	fecha_actualizacion timestamptz DEFAULT now() NULL,
 	fecha_ultima_conexion timestamptz DEFAULT now() NULL,
 	token_primer_ingreso timestamptz NULL,
+	device_token varchar(255) NULL,
 	estado bool DEFAULT true NULL,
 	fecha_eliminacion timestamptz NULL,
+	biografia varchar(600) NULL,
 	CONSTRAINT chk_genero CHECK (((genero)::text = ANY ((ARRAY['M'::character varying, 'F'::character varying, 'O'::character varying])::text[]))),
 	CONSTRAINT usuarios_correo_key UNIQUE (correo),
 	CONSTRAINT usuarios_documento_nit_key UNIQUE (documento_nit),
@@ -190,7 +213,7 @@ update
 CREATE TABLE rustdema2.evaluaciones (
 	id serial4 NOT NULL,
 	id_curso int4 NOT NULL,
-	tipo public."tipo_evaluacion" NOT NULL,
+	tipo rustdema2."tipo_evaluacion" NOT NULL,
 	titulo varchar(200) NOT NULL,
 	instrucciones text NULL,
 	configuracion jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -722,7 +745,7 @@ update
 CREATE TABLE rustdema2.banco_preguntas (
 	id serial4 NOT NULL,
 	id_curso int4 NULL,
-	tipo public."tipo_pregunta" NOT NULL,
+	tipo rustdema2."tipo_pregunta" NOT NULL,
 	contenido text NOT NULL,
 	opciones jsonb DEFAULT '[]'::jsonb NULL,
 	respuesta_correcta jsonb NULL,
@@ -1007,7 +1030,7 @@ CREATE TABLE rustdema2.preguntas_evaluacion (
 	id_evaluacion int4 NOT NULL,
 	id_pregunta int4 NULL,
 	texto_pregunta text NOT NULL,
-	"tipo_pregunta" public."tipo_pregunta" NOT NULL,
+	"tipo_pregunta" rustdema2."tipo_pregunta" NOT NULL,
 	opciones jsonb DEFAULT '[]'::jsonb NULL,
 	respuesta_correcta jsonb NULL,
 	puntaje numeric(5, 2) NOT NULL,
@@ -1127,6 +1150,173 @@ CREATE TABLE rustdema2.evaluaciones_calificacion (
 	CONSTRAINT evaluaciones_calificacion_estudiante_id_fkey FOREIGN KEY (estudiante_id) REFERENCES rustdema2.usuarios(id) ON DELETE CASCADE,
 	CONSTRAINT evaluaciones_calificacion_evaluacion_id_fkey FOREIGN KEY (evaluacion_id) REFERENCES rustdema2.evaluaciones_sesion(id) ON DELETE CASCADE
 );
+
+-- rustdema2.experiencia_profesional definition
+
+-- Drop table
+
+-- DROP TABLE rustdema2.experiencia_profesional;
+
+CREATE TABLE rustdema2.experiencia_profesional (
+	id serial4 NOT NULL,
+	usuario_id int4 NOT NULL,
+	empresa varchar(150) NOT NULL,
+	cargo varchar(150) NOT NULL,
+	descripcion text NULL,
+	fecha_inicio date NOT NULL,
+	fecha_fin date NULL,
+	es_principal bool DEFAULT false NOT NULL,
+	estado bool DEFAULT true NOT NULL,
+	fecha_creacion timestamptz DEFAULT now() NULL,
+	fecha_actualizacion timestamptz DEFAULT now() NULL,
+	CONSTRAINT experiencia_profesional_pkey PRIMARY KEY (id),
+	CONSTRAINT experiencia_profesional_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES rustdema2.usuarios(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_experiencia_usuario ON rustdema2.experiencia_profesional USING btree (usuario_id);
+CREATE INDEX idx_experiencia_principal ON rustdema2.experiencia_profesional USING btree (usuario_id, es_principal) WHERE (es_principal = true);
+
+-- Table Triggers
+
+create trigger actualizar_experiencia_profesional_modtime before
+update
+    on
+    rustdema2.experiencia_profesional for each row execute function rustdema2.actualizar_fecha_modificacion();
+
+
+-- rustdema2.dias_festivos definition
+
+-- Drop table
+
+-- DROP TABLE rustdema2.dias_festivos;
+
+CREATE TYPE rustdema2.tipo_festivo AS ENUM (
+    'nacional',
+    'regional',
+    'institucional',
+    'otro'
+);
+
+CREATE TABLE rustdema2.dias_festivos (
+	id serial4 NOT NULL,
+	nombre varchar(150) NOT NULL,
+	descripcion text NULL,
+	fecha date NOT NULL,
+	tipo rustdema2.tipo_festivo DEFAULT 'nacional' NOT NULL,
+	recurrente bool DEFAULT true NOT NULL,
+	estado bool DEFAULT true NOT NULL,
+	fecha_creacion timestamptz DEFAULT now() NULL,
+	fecha_actualizacion timestamptz DEFAULT now() NULL,
+	CONSTRAINT dias_festivos_pkey PRIMARY KEY (id),
+	CONSTRAINT dias_festivos_fecha_nombre_key UNIQUE (fecha, nombre)
+);
+CREATE INDEX idx_dias_festivos_fecha ON rustdema2.dias_festivos USING btree (fecha);
+CREATE INDEX idx_dias_festivos_tipo ON rustdema2.dias_festivos USING btree (tipo);
+
+-- Table Triggers
+
+create trigger actualizar_dias_festivos_modtime before
+update
+    on
+    rustdema2.dias_festivos for each row execute function rustdema2.actualizar_fecha_modificacion();
+
+
+-- rustdema2.reportes_errores definition
+
+-- Drop table
+
+-- DROP TABLE rustdema2.reportes_errores;
+
+CREATE TYPE rustdema2.tipo_reporte AS ENUM (
+    'error',
+    'sugerencia',
+    'mejora',
+    'otro'
+);
+
+CREATE TYPE rustdema2.estado_reporte AS ENUM (
+    'recibido',
+    'en_revision',
+    'en_desarrollo',
+    'resuelto',
+    'rechazado',
+    'cerrado'
+);
+
+CREATE TYPE rustdema2.prioridad_reporte AS ENUM (
+    'baja',
+    'media',
+    'alta',
+    'critica'
+);
+
+CREATE TABLE rustdema2.reportes_errores (
+	id serial4 NOT NULL,
+	usuario_id int4 NULL,
+	titulo varchar(200) NOT NULL,
+	descripcion text NOT NULL,
+	tipo rustdema2.tipo_reporte DEFAULT 'error' NOT NULL,
+	prioridad rustdema2.prioridad_reporte DEFAULT 'media' NOT NULL,
+	estado rustdema2.estado_reporte DEFAULT 'recibido' NOT NULL,
+	captura_url text NULL,
+	responsable_id int4 NULL,
+	fecha_resolucion timestamptz NULL,
+	solucion text NULL,
+	fecha_creacion timestamptz DEFAULT now() NULL,
+	fecha_actualizacion timestamptz DEFAULT now() NULL,
+	CONSTRAINT reportes_errores_pkey PRIMARY KEY (id),
+	CONSTRAINT reportes_errores_responsable_id_fkey FOREIGN KEY (responsable_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL,
+	CONSTRAINT reportes_errores_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_reportes_estado ON rustdema2.reportes_errores USING btree (estado);
+CREATE INDEX idx_reportes_usuario ON rustdema2.reportes_errores USING btree (usuario_id);
+CREATE INDEX idx_reportes_prioridad ON rustdema2.reportes_errores USING btree (prioridad, estado);
+
+-- Table Triggers
+
+create trigger actualizar_reportes_errores_modtime before
+update
+    on
+    rustdema2.reportes_errores for each row execute function rustdema2.actualizar_fecha_modificacion();
+
+
+-- rustdema2.seguimiento_reportes definition
+
+-- Drop table
+
+-- DROP TABLE rustdema2.seguimiento_reportes;
+
+CREATE TYPE rustdema2.tipo_seguimiento AS ENUM (
+    'cambio_estado',
+    'comentario',
+    'asignacion',
+    'resolucion',
+    'reapertura',
+    'otro'
+);
+
+CREATE TABLE rustdema2.seguimiento_reportes (
+	id serial4 NOT NULL,
+	reporte_id int4 NOT NULL,
+	usuario_id int4 NULL,
+	tipo rustdema2.tipo_seguimiento DEFAULT 'comentario' NOT NULL,
+	comentario text NOT NULL,
+	estado_anterior rustdema2.estado_reporte NULL,
+	estado_nuevo rustdema2.estado_reporte NULL,
+	fecha_creacion timestamptz DEFAULT now() NULL,
+	CONSTRAINT seguimiento_reportes_pkey PRIMARY KEY (id),
+	CONSTRAINT seguimiento_reportes_reporte_id_fkey FOREIGN KEY (reporte_id) REFERENCES rustdema2.reportes_errores(id) ON DELETE CASCADE,
+	CONSTRAINT seguimiento_reportes_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_seguimiento_reporte ON rustdema2.seguimiento_reportes USING btree (reporte_id, fecha_creacion DESC);
+CREATE INDEX idx_seguimiento_usuario ON rustdema2.seguimiento_reportes USING btree (usuario_id);
+
+-- Table Triggers
+
+create trigger actualizar_seguimiento_reportes_modtime before
+update
+    on
+    rustdema2.seguimiento_reportes for each row execute function rustdema2.actualizar_fecha_modificacion();
+
 
 -- ============================================================================
 -- Datos iniciales del sistema (schema rustdema2)

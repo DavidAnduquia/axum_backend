@@ -118,6 +118,65 @@ impl UsuarioService {
         Ok(usuarios_con_rol)
     }
 
+    /// Obtener usuarios conectados con información completa
+    /// Combina los datos del SocketService con la base de datos
+    #[instrument(skip(self))]
+    pub async fn obtener_usuarios_conectados(
+        &self,
+        user_ids: Vec<i32>,
+    ) -> Result<Vec<usuario::UsuarioConectadoInfo>, AppError> {
+        let db = self.get_connection().await;
+
+        // Obtener información de usuarios de la base de datos
+        let mut usuarios_info = Vec::new();
+        for user_id in user_ids {
+            if let Some(usuario) = Usuario::find_by_id(user_id).one(&db).await? {
+                // Obtener el rol del usuario
+                let rol = usuario::Entity::find_by_id(user_id)
+                    .find_also_related(rol::Entity)
+                    .one(&db)
+                    .await?
+                    .and_then(|(_, r)| r);
+
+                usuarios_info.push(usuario::UsuarioConectadoInfo {
+                    id: usuario.id,
+                    nombre: usuario.nombre.clone(),
+                    correo: usuario.correo.clone(),
+                    documento_nit: usuario.documento_nit.clone(),
+                    rol: rol.map(|r| r.nombre).unwrap_or_else(|| "Sin rol".to_string()),
+                    fecha_ultima_conexion: usuario.fecha_ultima_conexion,
+                    activo: true,
+                });
+            }
+        }
+
+        Ok(usuarios_info)
+    }
+
+    /// Expirar sesión de un usuario (usado por administradores)
+    /// Marca la última conexión como ahora para invalidar tokens previos
+    #[instrument(skip(self))]
+    pub async fn expirar_sesion_usuario(&self, id: i32) -> Result<UsuarioModel, AppError> {
+        let db = self.get_connection().await;
+
+        let usuario = Usuario::find_by_id(id)
+            .one(&db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Usuario no encontrado".into()))?;
+
+        // Actualizar la fecha de última conexión a "ahora" para invalidar tokens previos
+        // El middleware de auth verificará que el token iat < fecha_ultima_conexion
+        let now = Utc::now();
+        let mut usuario = usuario.into_active_model();
+        usuario.fecha_ultima_conexion = Set(now);
+        usuario.fecha_actualizacion = Set(now); // También actualizar fecha_actualizacion para evitar error del trigger
+        let usuario = usuario.update(&db).await?;
+
+        tracing::info!("🚫 Sesión expirada para usuario {} por admin", id);
+
+        Ok(usuario)
+    }
+
     // Crear un nuevo usuario
     pub async fn crear_usuario(
         &self,

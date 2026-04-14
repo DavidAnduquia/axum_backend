@@ -1,12 +1,15 @@
 use axum::{extract::State, Json};
 use bcrypt::{hash, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use std::time::Duration;
 use tokio;
 use utoipa::ToSchema;
 use validator::Validate;
 
 use crate::{
     models::{ApiResponse, AppState, AuthResponse, Claims, CreateUserRequest, LoginRequest, User},
+    services::firebaseapp::{FcmMessage, FcmNotification, FirebaseAppHandle},
     utils::errors::AppError,
 };
 
@@ -71,6 +74,41 @@ pub async fn register(
     Ok(Json(ApiResponse::success(response)))
 }
 
+fn schedule_login_notification(
+    firebase: Option<FirebaseAppHandle>,
+    device_token: Option<String>,
+    user_name: String,
+) {
+    match (firebase, device_token) {
+        (Some(firebase), Some(device_token)) => {
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+
+                let notification = FcmNotification::new(
+                    Some("Inicio de sesión".to_string()),
+                    Some(format!("Hola {}, tu login fue exitoso", user_name)),
+                );
+
+                let mut data = Map::new();
+                data.insert("event".into(), Value::String("login".into()));
+
+                let message =
+                    FcmMessage::new(device_token).with_notification(notification).with_data(data);
+
+                if let Err(err) = firebase.send_message(message).await {
+                    tracing::error!("Error enviando notificación FCM: {}", err);
+                }
+            });
+        }
+        (None, Some(_)) => {
+            tracing::warn!(
+                "FCM no está configurado; se omitió la notificación push de login"
+            );
+        }
+        _ => {}
+    }
+}
+
 #[utoipa::path(
     post,
     path = "/auth/login",
@@ -88,6 +126,7 @@ pub async fn login(
 ) -> Result<Json<ApiResponse<AuthResponse>>, AppError> {
     // Validate input
     payload.validate()?;
+    let device_token = payload.device_token.clone();
 
     // Modo testing: si no hay BD disponible y es usuario de test, generar respuesta
     let db_available = state.db.is_some();
@@ -101,7 +140,10 @@ pub async fn login(
             name: "Test User".to_string(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
+            rol_id: 1, // Coordinador por defecto en testing
         };
+
+        let user_name = test_user.name.clone();
 
         // Generate JWT token
         let token = generate_token(&test_user, state.jwt_encoding_key.as_ref())?;
@@ -110,6 +152,13 @@ pub async fn login(
             token,
             user: test_user.into(),
         };
+
+        // En modo testing, solo loguear el device_token si existe
+        if let Some(ref dt) = device_token {
+            tracing::info!("📱 Device token recibido en modo testing: {}", dt);
+        }
+
+        schedule_login_notification(state.firebase.clone(), device_token.clone(), user_name);
 
         return Ok(Json(ApiResponse::success(response)));
     }
@@ -120,7 +169,7 @@ pub async fn login(
 
     // Find user by email
     let user = sqlx::query_as::<_, User>(
-        "SELECT id, correo as email, contrasena as password_hash, nombre as name, fecha_creacion as created_at, fecha_actualizacion as updated_at FROM usuarios WHERE correo = $1"
+        "SELECT id, correo as email, contrasena as password_hash, nombre as name, fecha_creacion as created_at, fecha_actualizacion as updated_at, rol_id FROM usuarios WHERE correo = $1"
     )
     .bind(&payload.email)
     .fetch_optional(db)
@@ -138,13 +187,34 @@ pub async fn login(
         return Err(AppError::Unauthorized("Invalid credentials".into()));
     }
 
+    // Guardar device_token en la base de datos si se proporcionó
+    if let Some(ref token) = device_token {
+        if !token.is_empty() {
+            if let Err(err) = sqlx::query(
+                "UPDATE usuarios SET device_token = $1 WHERE id = $2"
+            )
+            .bind(token)
+            .bind(user.id)
+            .execute(db)
+            .await {
+                tracing::error!("Error al actualizar el token del dispositivo: {}", err);
+                // No fallar el login si no podemos actualizar el token
+            } else {
+                tracing::info!("✅ Token FCM guardado para usuario {}", user.id);
+            }
+        }
+    }
+
     // Generate JWT token
     let token = generate_token(&user, state.jwt_encoding_key.as_ref())?;
+    let user_name = user.name.clone();
 
     let response = AuthResponse {
         token,
         user: user.into(),
     };
+
+    schedule_login_notification(state.firebase.clone(), device_token, user_name);
 
     Ok(Json(ApiResponse::success(response)))
 }

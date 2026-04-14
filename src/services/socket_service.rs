@@ -1,17 +1,25 @@
+use axum::extract::ws::Message;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::OnceLock;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 use crate::models::socket::{ConnectionInfo, SocketMemoryMetrics};
+
+/// Información de conexión WebSocket con sender para enviar mensajes
+#[derive(Clone)]
+pub struct SocketConnection {
+    pub socket_id: String,
+    pub sender: mpsc::UnboundedSender<Message>,
+}
 
 /// Estructura para manejar conexiones de WebSocket
 /// Equivalente a SocketService en TypeScript
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct SocketService {
-    connections: Arc<RwLock<HashMap<i64, Vec<String>>>>, // user_id -> vec of socket_ids
+    connections: Arc<RwLock<HashMap<i64, Vec<SocketConnection>>>>, // user_id -> vec of connections
+    expired_sessions: Arc<RwLock<HashSet<i64>>>, // user_ids whose sessions have been expired
 }
 
 #[allow(dead_code)]
@@ -21,24 +29,60 @@ impl SocketService {
         // Para aula virtual pequeña (<20 usuarios), esto es más eficiente
         Self {
             connections: Arc::new(RwLock::new(HashMap::with_capacity(1000))),
+            expired_sessions: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
+    /// Marca la sesión de un usuario como expirada y elimina sus conexiones
+    /// Esto garantiza que no aparezca en la lista de conectados
+    pub async fn expire_user_session(&self, user_id: i64) {
+        tracing::info!("🚫 Marcando sesión como expirada para usuario {}", user_id);
+        
+        // Agregar a la lista de sesiones expiradas
+        {
+            let mut expired = self.expired_sessions.write().await;
+            expired.insert(user_id);
+        }
+        
+        // Cerrar y eliminar todas las conexiones del usuario
+        let senders_to_close = {
+            let mut connections = self.connections.write().await;
+            connections.remove(&user_id)
+        };
+        
+        if let Some(sockets) = senders_to_close {
+            for socket in sockets {
+                let _ = socket.sender.send(Message::Close(None));
+                tracing::info!("🔌 Cerrando socket {} del usuario expirado {}", socket.socket_id, user_id);
+            }
+        }
+    }
+
+    /// Limpia la marca de sesión expirada cuando el usuario se desconecta completamente
+    /// Esto permite que el usuario pueda reconectarse más tarde
+    pub async fn clear_expired_session(&self, user_id: i64) {
+        let mut expired = self.expired_sessions.write().await;
+        expired.remove(&user_id);
+    }
+
     /// Registra una nueva conexión de socket para un usuario
-    pub async fn add_connection(&self, user_id: i64, socket_id: &str) {
+    pub async fn add_connection(&self, user_id: i64, socket_id: &str, sender: mpsc::UnboundedSender<Message>) {
         tracing::info!("Usuario {} conectado con socket {}", user_id, socket_id);
         let mut connections = self.connections.write().await;
         connections
             .entry(user_id)
             .or_insert_with(Vec::new)
-            .push(socket_id.to_string());
+            .push(SocketConnection {
+                socket_id: socket_id.to_string(),
+                sender,
+            });
     }
 
-    /// Elimina una conexión de socket
+    /// Elimina una conexión de socket específica
     pub async fn remove_connection(&self, user_id: i64, socket_id: &str) {
         let mut connections = self.connections.write().await;
         if let Some(sockets) = connections.get_mut(&user_id) {
-            sockets.retain(|id| id != socket_id);
+            sockets.retain(|conn| conn.socket_id != socket_id);
             if sockets.is_empty() {
                 connections.remove(&user_id);
             }
@@ -48,6 +92,26 @@ impl SocketService {
             user_id,
             socket_id
         );
+    }
+
+    /// Desconecta completamente a un usuario (cierra todos sus sockets)
+    /// Usado cuando el usuario hace logout manualmente
+    pub async fn disconnect_all_user_sockets(&self, user_id: i64) {
+        tracing::info!("🔌 Desconectando todos los sockets del usuario {}", user_id);
+        
+        // Obtener y eliminar todas las conexiones del usuario
+        let sockets_to_close = {
+            let mut connections = self.connections.write().await;
+            connections.remove(&user_id)
+        };
+        
+        // Cerrar cada socket
+        if let Some(sockets) = sockets_to_close {
+            for socket in sockets {
+                let _ = socket.sender.send(Message::Close(None));
+                tracing::info!("🔌 Socket {} del usuario {} cerrado", socket.socket_id, user_id);
+            }
+        }
     }
 
     /// Emite una notificación a un usuario específico
@@ -60,10 +124,21 @@ impl SocketService {
                 user_id,
                 sockets.len()
             );
-            // Aquí se enviaría el mensaje a través de los sockets
-            // Por ahora solo registramos la acción
-            for socket_id in sockets {
-                tracing::debug!("  → Socket {}: {:?}", socket_id, notification);
+            // Enviar el mensaje a través de los sockets
+            let message_text = match serde_json::to_string(&notification) {
+                Ok(text) => text,
+                Err(e) => {
+                    tracing::error!("❌ Error serializando notificación: {}", e);
+                    return;
+                }
+            };
+            for conn in sockets {
+                let msg = Message::Text(message_text.clone().into());
+                if let Err(e) = conn.sender.send(msg) {
+                    tracing::warn!("⚠️  Error enviando mensaje al socket {}: {}", conn.socket_id, e);
+                } else {
+                    tracing::debug!("  → Socket {}: mensaje enviado", conn.socket_id);
+                }
             }
         } else {
             tracing::warn!("⚠️  Usuario {} no tiene conexiones activas", user_id);
@@ -84,16 +159,26 @@ impl SocketService {
     pub async fn emit_notification_broadcast(&self, notification: Value) {
         let connections = self.connections.read().await;
         let total_users = connections.len();
-        tracing::info!("📢 Broadcast de notificación a {} usuarios", total_users);
+        let total_connections: usize = connections.values().map(|v| v.len()).sum();
+        tracing::info!("📢 Broadcast de notificación a {} usuarios ({} conexiones)", total_users, total_connections);
 
+        // Enviar a todos los usuarios
+        let message_text = match serde_json::to_string(&notification) {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::error!("❌ Error serializando notificación: {}", e);
+                return;
+            }
+        };
+        
         for (user_id, sockets) in connections.iter() {
-            for socket_id in sockets {
-                tracing::debug!(
-                    "  → Usuario {} Socket {}: {:?}",
-                    user_id,
-                    socket_id,
-                    notification
-                );
+            for conn in sockets {
+                let msg = Message::Text(message_text.clone().into());
+                if let Err(e) = conn.sender.send(msg) {
+                    tracing::warn!("⚠️  Error enviando mensaje al socket {}: {}", conn.socket_id, e);
+                } else {
+                    tracing::debug!("  → Usuario {} Socket {}: mensaje enviado", user_id, conn.socket_id);
+                }
             }
         }
     }
@@ -106,11 +191,21 @@ impl SocketService {
 
     /// Obtiene información de conexión
     /// Equivalente a getConnectionInfo en TypeScript
+    /// Excluye usuarios cuyas sesiones han sido expiradas
     pub async fn get_connection_info(&self) -> ConnectionInfo {
         let connections = self.connections.read().await;
-        let connected_users = connections.len();
-        let rooms: Vec<String> = connections
+        let expired = self.expired_sessions.read().await;
+        
+        // Filtrar usuarios expirados
+        let active_users: Vec<i64> = connections
             .keys()
+            .filter(|user_id| !expired.contains(*user_id))
+            .copied()
+            .collect();
+        
+        let connected_users = active_users.len();
+        let rooms: Vec<String> = active_users
+            .into_iter()
             .map(|user_id| format!("user_{}", user_id))
             .collect();
 

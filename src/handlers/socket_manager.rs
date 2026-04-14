@@ -5,10 +5,11 @@ use axum::{
     },
     response::IntoResponse,
 };
+use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 use crate::models::AppState;
 use crate::services::socket_service::get_socket_service;
@@ -29,6 +30,8 @@ pub struct ConnectedUser {
 pub enum SocketEvent {
     #[serde(rename = "user_connected")]
     UserConnected(ConnectedUser),
+    #[serde(rename = "user_disconnected")]
+    UserDisconnected(ConnectedUser),
     #[serde(rename = "join_notifications")]
     JoinNotifications { user_id: i32 },
     #[serde(rename = "leave_notifications")]
@@ -50,24 +53,41 @@ pub async fn websocket_handler(
 
 /// Maneja la conexión WebSocket individual
 /// Equivalente a la lógica dentro de io.on('connection') en TypeScript
-async fn handle_socket(mut socket: WebSocket) {
+async fn handle_socket(socket: WebSocket) {
     let socket_id = uuid::Uuid::new_v4().to_string();
     tracing::info!("🔌 Nuevo cliente conectado: {}", socket_id);
 
     let socket_service = get_socket_service();
 
+    // Dividir el WebSocket en sender y receiver
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    // Crear canal para recibir mensajes del servicio y enviarlos al WebSocket
+    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+
     // Estado local para rastrear el usuario conectado
     let current_user: Arc<RwLock<Option<i32>>> = Arc::new(RwLock::new(None));
+    let current_user_clone = current_user.clone();
+
+    // Tarea para enviar mensajes desde el canal al WebSocket
+    let send_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if let Err(e) = ws_sender.send(msg).await {
+                tracing::warn!("⚠️  Error enviando mensaje al WebSocket: {}", e);
+                break;
+            }
+        }
+    });
 
     // Procesar mensajes del cliente
-    while let Some(Ok(msg)) = socket.recv().await {
+    while let Some(Ok(msg)) = ws_receiver.next().await {
         if let Message::Text(text) = msg {
             tracing::debug!("📨 Mensaje recibido: {}", text);
 
             // Intentar parsear el evento
             match serde_json::from_str::<SocketEvent>(&text) {
                 Ok(event) => {
-                    handle_socket_event(event, socket_service, &socket_id, &current_user).await;
+                    handle_socket_event(event, socket_service, &socket_id, &current_user, tx.clone()).await;
                 }
                 Err(e) => {
                     tracing::warn!("⚠️  Error parseando evento: {}", e);
@@ -80,11 +100,16 @@ async fn handle_socket(mut socket: WebSocket) {
     }
 
     // Limpiar la conexión
-    if let Some(user_id) = *current_user.read().await {
+    if let Some(user_id) = *current_user_clone.read().await {
         socket_service
             .remove_connection(user_id as i64, &socket_id)
             .await;
+        // Limpiar la marca de sesión expirada para permitir reconexión
+        socket_service.clear_expired_session(user_id as i64).await;
     }
+
+    // Cancelar la tarea de envío
+    send_task.abort();
 
     tracing::info!("🔌 Cliente desconectado: {}", socket_id);
 }
@@ -96,6 +121,7 @@ async fn handle_socket_event(
     socket_service: &crate::services::socket_service::SocketService,
     socket_id: &str,
     current_user: &Arc<RwLock<Option<i32>>>,
+    sender: mpsc::UnboundedSender<Message>,
 ) {
     match event {
         SocketEvent::UserConnected(user) => {
@@ -105,11 +131,36 @@ async fn handle_socket_event(
                 user.user_id
             );
             socket_service
-                .add_connection(user.user_id as i64, socket_id)
+                .add_connection(user.user_id as i64, socket_id, sender)
                 .await;
 
             // Guardar el user_id actual
             *current_user.write().await = Some(user.user_id);
+        }
+        SocketEvent::UserDisconnected(user) => {
+            tracing::info!(
+                "👤 Usuario desconectado voluntariamente: {} (ID: {})",
+                user.identificador,
+                user.user_id
+            );
+            
+            // Cerrar TODAS las conexiones de este usuario (puede tener múltiples sockets)
+            socket_service
+                .disconnect_all_user_sockets(user.user_id as i64)
+                .await;
+            
+            // Notificar a todos los demás usuarios que este usuario se desconectó
+            let disconnect_notification = json!({
+                "event": "users_updated",
+                "data": {
+                    "action": "user_disconnected",
+                    "user_id": user.user_id,
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                }
+            });
+            socket_service.emit_notification_broadcast(disconnect_notification).await;
+
+            tracing::info!("✅ Usuario {} desconectado completamente", user.user_id);
         }
         SocketEvent::JoinNotifications { user_id } => {
             let room_name = format!("user_{}", user_id);

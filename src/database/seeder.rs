@@ -1,9 +1,7 @@
 use sea_orm::{Database, DatabaseConnection};
-use sqlx::PgPool;
 
 /// Ejecuta todas las migraciones basadas en los modelos
 pub async fn run_migrations(
-    pool: &PgPool,
     database_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Running migrations from SeaORM models...");
@@ -13,9 +11,6 @@ pub async fn run_migrations(
         .await
         .map_err(|e| sqlx::Error::Configuration(e.to_string().into()))?;
 
-    // Migrar tabla users (legacy)
-    migrate_users(pool).await?;
-
     // Migrar tabla usuarios usando SeaORM
     migrate_usuarios_with_seaorm(&db).await?;
 
@@ -23,27 +18,6 @@ pub async fn run_migrations(
     migrate_roles_with_seaorm(&db).await?;
 
     tracing::info!("✅ All migrations completed successfully");
-    Ok(())
-}
-
-/// Migración para users
-async fn migrate_users(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS rustdema2.users (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email VARCHAR(255) UNIQUE NOT NULL,
-            password_hash VARCHAR(255) NOT NULL,
-            name VARCHAR(255) NOT NULL,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    tracing::info!("✓ Table 'users' migrated");
     Ok(())
 }
 

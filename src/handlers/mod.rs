@@ -16,3 +16,4 @@ pub mod unidad;
 pub mod contenido_unidad;
 pub mod usuarios;
 pub mod portafolio;
+pub mod reporte_error;
