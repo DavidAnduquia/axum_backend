@@ -8,10 +8,10 @@ use sea_orm::{
 use crate::{
     database::DbExecutor,
     models::{
-        reporte_error::{
-            self, seguimiento_reporte, ActualizarReporteError, AsignarResponsableRequest,
-            CambiarEstadoReporte, EstadoReporte, Model as ReporteErrorModel, NuevoReporteError,
-            NuevoSeguimientoReporte, PrioridadReporte, TipoReporte, TipoSeguimiento,
+        soporte::{
+            self, soporte_seguimiento, ActualizarSoporteError, AsignarResponsableRequest,
+            CambiarEstadoSoporte, EstadoSoporte, Model as SoporteErrorModel, NuevoSoporteError,
+            NuevoSeguimientoSoporte, PrioridadSoporte, TipoSoporte, TipoSeguimientoSoporte,
         },
         AppState,
     },
@@ -19,58 +19,58 @@ use crate::{
 };
 
 // Alias para entidades
-use reporte_error::Entity as ReporteError;
-use seguimiento_reporte::{Entity as SeguimientoReporte, Model as SeguimientoModel};
+use soporte::Entity as SoporteError;
+use soporte_seguimiento::{Entity as SeguimientoSoporte, Model as SeguimientoModel};
 
 #[derive(Debug, Clone)]
-pub struct ReporteErrorService {
+pub struct SoporteService {
     db: DbExecutor,
 }
 
-impl FromRef<AppState> for ReporteErrorService {
+impl FromRef<AppState> for SoporteService {
     fn from_ref(state: &AppState) -> Self {
         let executor = state
             .db
             .clone()
             .expect("Database connection is not available");
-        ReporteErrorService::new(executor)
+        SoporteService::new(executor)
     }
 }
 
-impl ReporteErrorService {
+impl SoporteService {
     pub fn new(db: DbExecutor) -> Self {
         Self { db }
     }
 
     // ==================== CRUD BÁSICO REPORTES ====================
 
-    /// Crear un nuevo reporte de error
-    pub async fn crear_reporte(
+    /// Crear un nuevo soportes de error
+    pub async fn crear_soporte(
         &self,
-        nuevo_reporte: NuevoReporteError,
-    ) -> Result<ReporteErrorModel, AppError> {
+        nuevo_soporte: NuevoSoporteError,
+    ) -> Result<SoporteErrorModel, AppError> {
         // Validaciones
-        if nuevo_reporte.titulo.trim().is_empty() {
+        if nuevo_soporte.titulo.trim().is_empty() {
             return Err(AppError::BadRequest("El título es obligatorio".into()));
         }
-        if nuevo_reporte.descripcion.trim().is_empty() {
+        if nuevo_soporte.descripcion.trim().is_empty() {
             return Err(AppError::BadRequest("La descripción es obligatoria".into()));
         }
-        if nuevo_reporte.titulo.len() > 200 {
+        if nuevo_soporte.titulo.len() > 200 {
             return Err(AppError::BadRequest(
                 "El título no puede exceder 200 caracteres".into(),
             ));
         }
 
         let ahora = Utc::now();
-        let reporte = reporte_error::ActiveModel {
-            usuario_id: Set(nuevo_reporte.usuario_id),
-            titulo: Set(nuevo_reporte.titulo.trim().to_string()),
-            descripcion: Set(nuevo_reporte.descripcion.trim().to_string()),
-            tipo: Set(nuevo_reporte.tipo),
-            prioridad: Set(nuevo_reporte.prioridad.unwrap_or(PrioridadReporte::Media)),
-            estado: Set(EstadoReporte::Recibido),
-            captura_url: Set(nuevo_reporte.captura_url),
+        let soportes = soporte::ActiveModel {
+            usuario_id: Set(nuevo_soporte.usuario_id),
+            titulo: Set(nuevo_soporte.titulo.trim().to_string()),
+            descripcion: Set(nuevo_soporte.descripcion.trim().to_string()),
+            tipo: Set(nuevo_soporte.tipo),
+            prioridad: Set(nuevo_soporte.prioridad.unwrap_or(PrioridadSoporte::Media)),
+            estado: Set(EstadoSoporte::Recibido),
+            captura_url: Set(nuevo_soporte.captura_url),
             responsable_id: Set(None),
             fecha_resolucion: Set(None),
             solucion: Set(None),
@@ -79,60 +79,60 @@ impl ReporteErrorService {
             ..Default::default()
         };
 
-        let reporte_creado = reporte.insert(&self.db.connection()).await?;
+        let soportes_creado = soportes.insert(&self.db.connection()).await?;
 
         // Crear seguimiento inicial automático
         self.crear_seguimiento_interno(
-            reporte_creado.id,
-            nuevo_reporte.usuario_id,
-            TipoSeguimiento::Otro,
+            soportes_creado.id,
+            nuevo_soporte.usuario_id,
+            TipoSeguimientoSoporte::Otro,
             "Reporte creado y registrado en el sistema".to_string(),
             None,
-            Some(EstadoReporte::Recibido),
+            Some(EstadoSoporte::Recibido),
         )
         .await?;
 
-        Ok(reporte_creado)
+        Ok(soportes_creado)
     }
 
-    /// Obtener un reporte por ID
-    pub async fn obtener_por_id(&self, id: i32) -> Result<ReporteErrorModel, AppError> {
-        let reporte = ReporteError::find_by_id(id)
+    /// Obtener un soportes por ID
+    pub async fn obtener_por_id(&self, id: i32) -> Result<SoporteErrorModel, AppError> {
+        let soportes = SoporteError::find_by_id(id)
             .one(&self.db.connection())
             .await?
-            .ok_or_else(|| AppError::NotFound("Reporte no encontrado".into()))?;
+            .ok_or_else(|| AppError::NotFound("Soporte no encontrado".into()))?;
 
-        Ok(reporte)
+        Ok(soportes)
     }
 
-    /// Listar reportes con filtros y paginación
-    pub async fn listar_reportes(
+    /// Listar soportes con filtros y paginación
+    pub async fn listar_soportes(
         &self,
-        estado: Option<EstadoReporte>,
-        tipo: Option<TipoReporte>,
-        prioridad: Option<PrioridadReporte>,
+        estado: Option<EstadoSoporte>,
+        tipo: Option<TipoSoporte>,
+        prioridad: Option<PrioridadSoporte>,
         usuario_id: Option<i32>,
         responsable_id: Option<i32>,
         limit: Option<u64>,
         offset: Option<u64>,
-    ) -> Result<(Vec<ReporteErrorModel>, u64), AppError> {
-        let mut query = ReporteError::find();
+    ) -> Result<(Vec<SoporteErrorModel>, u64), AppError> {
+        let mut query = SoporteError::find();
 
         // Aplicar filtros
         if let Some(e) = estado {
-            query = query.filter(reporte_error::Column::Estado.eq(e));
+            query = query.filter(soporte::Column::Estado.eq(e));
         }
         if let Some(t) = tipo {
-            query = query.filter(reporte_error::Column::Tipo.eq(t));
+            query = query.filter(soporte::Column::Tipo.eq(t));
         }
         if let Some(p) = prioridad {
-            query = query.filter(reporte_error::Column::Prioridad.eq(p));
+            query = query.filter(soporte::Column::Prioridad.eq(p));
         }
         if let Some(u) = usuario_id {
-            query = query.filter(reporte_error::Column::UsuarioId.eq(u));
+            query = query.filter(soporte::Column::UsuarioId.eq(u));
         }
         if let Some(r) = responsable_id {
-            query = query.filter(reporte_error::Column::ResponsableId.eq(r));
+            query = query.filter(soporte::Column::ResponsableId.eq(r));
         }
 
         let total = query.clone().count(&self.db.connection()).await?;
@@ -144,93 +144,93 @@ impl ReporteErrorService {
             query = query.offset(offset_val);
         }
 
-        let reportes = query
-            .order_by_desc(reporte_error::Column::CreatedAt)
+        let soportes = query
+            .order_by_desc(soporte::Column::CreatedAt)
             .all(&self.db.connection())
             .await?;
 
-        Ok((reportes, total))
+        Ok((soportes, total))
     }
 
-    /// Actualizar un reporte
-    pub async fn actualizar_reporte(
+    /// Actualizar un soporte existente
+    pub async fn actualizar_soporte(
         &self,
         id: i32,
-        datos: ActualizarReporteError,
+        datos: ActualizarSoporteError,
         usuario_accion: Option<i32>,
-    ) -> Result<ReporteErrorModel, AppError> {
-        let reporte = ReporteError::find_by_id(id)
+    ) -> Result<SoporteErrorModel, AppError> {
+        let soportes = SoporteError::find_by_id(id)
             .one(&self.db.connection())
             .await?
-            .ok_or_else(|| AppError::NotFound("Reporte no encontrado".into()))?;
+            .ok_or_else(|| AppError::NotFound("Soporte no encontrado".into()))?;
 
-        let estado_anterior = reporte.estado.clone();
-        let mut reporte: reporte_error::ActiveModel = reporte.into();
+        let estado_anterior = soportes.estado.clone();
+        let mut soportes: soporte::ActiveModel = soportes.into();
         let mut cambios = Vec::new();
         let mut cambio_estado = false;
 
         if let Some(titulo) = datos.titulo {
             if !titulo.trim().is_empty() {
-                reporte.titulo = Set(titulo.trim().to_string());
+                soportes.titulo = Set(titulo.trim().to_string());
                 cambios.push("título actualizado".to_string());
             }
         }
 
         if let Some(descripcion) = datos.descripcion {
             if !descripcion.trim().is_empty() {
-                reporte.descripcion = Set(descripcion.trim().to_string());
+                soportes.descripcion = Set(descripcion.trim().to_string());
                 cambios.push("descripción actualizada".to_string());
             }
         }
 
         if let Some(prioridad) = datos.prioridad {
-            reporte.prioridad = Set(prioridad);
+            soportes.prioridad = Set(prioridad);
             cambios.push("prioridad modificada".to_string());
         }
 
         if let Some(captura) = datos.captura_url {
-            reporte.captura_url = Set(Some(captura));
+            soportes.captura_url = Set(Some(captura));
             cambios.push("captura de pantalla actualizada".to_string());
         }
 
         if let Some(nuevo_estado) = datos.estado {
-            reporte.estado = Set(nuevo_estado.clone());
+            soportes.estado = Set(nuevo_estado.clone());
             cambio_estado = true;
 
             // Si se resuelve, guardar la solución y fecha
-            if nuevo_estado == EstadoReporte::Resuelto {
-                reporte.fecha_resolucion = Set(Some(Utc::now()));
+            if nuevo_estado == EstadoSoporte::Resuelto {
+                soportes.fecha_resolucion = Set(Some(Utc::now()));
                 if let Some(solucion) = datos.solucion {
-                    reporte.solucion = Set(Some(solucion));
+                    soportes.solucion = Set(Some(solucion));
                 }
             }
         }
 
         if let Some(resp_id) = datos.responsable_id {
-            reporte.responsable_id = Set(Some(resp_id));
+            soportes.responsable_id = Set(Some(resp_id));
             cambios.push("responsable asignado".to_string());
         }
 
-        reporte.updated_at = Set(Some(Utc::now()));
+        soportes.updated_at = Set(Some(Utc::now()));
 
-        let reporte_actualizado = reporte.update(&self.db.connection()).await?;
+        let soportes_actualizado = soportes.update(&self.db.connection()).await?;
 
         // Crear seguimiento automático
         if cambio_estado {
             self.crear_seguimiento_interno(
-                reporte_actualizado.id,
+                soportes_actualizado.id,
                 usuario_accion,
-                TipoSeguimiento::CambioEstado,
-                format!("Cambio de estado: {:?} -> {:?}", estado_anterior, reporte_actualizado.estado),
+                TipoSeguimientoSoporte::CambioEstado,
+                format!("Cambio de estado: {:?} -> {:?}", estado_anterior, soportes_actualizado.estado),
                 Some(estado_anterior),
-                Some(reporte_actualizado.estado.clone()),
+                Some(soportes_actualizado.estado.clone()),
             )
             .await?;
         } else if !cambios.is_empty() {
             self.crear_seguimiento_interno(
-                reporte_actualizado.id,
+                soportes_actualizado.id,
                 usuario_accion,
-                TipoSeguimiento::Comentario,
+                TipoSeguimientoSoporte::Comentario,
                 format!("Actualización: {}", cambios.join(", ")),
                 None,
                 None,
@@ -238,60 +238,60 @@ impl ReporteErrorService {
             .await?;
         }
 
-        Ok(reporte_actualizado)
+        Ok(soportes_actualizado)
     }
 
-    /// Eliminar un reporte (con todos sus seguimientos por CASCADE)
-    pub async fn eliminar_reporte(&self, id: i32) -> Result<(), AppError> {
-        let reporte = ReporteError::find_by_id(id)
+    /// Eliminar un soporte (con todos sus seguimientos por CASCADE)
+    pub async fn eliminar_soporte(&self, id: i32) -> Result<(), AppError> {
+        let soportes = SoporteError::find_by_id(id)
             .one(&self.db.connection())
             .await?
-            .ok_or_else(|| AppError::NotFound("Reporte no encontrado".into()))?;
+            .ok_or_else(|| AppError::NotFound("Soporte no encontrado".into()))?;
 
-        reporte.delete(&self.db.connection()).await?;
+        soportes.delete(&self.db.connection()).await?;
         Ok(())
     }
 
     // ==================== LÓGICA DE NEGOCIO - ESTADOS ====================
 
-    /// Cambiar estado de un reporte con seguimiento automático
+    /// Cambiar estado de un soportes con seguimiento automático
     pub async fn cambiar_estado(
         &self,
         id: i32,
-        cambio: CambiarEstadoReporte,
-    ) -> Result<ReporteErrorModel, AppError> {
-        let reporte = ReporteError::find_by_id(id)
+        cambio: CambiarEstadoSoporte,
+    ) -> Result<SoporteErrorModel, AppError> {
+        let soportes = SoporteError::find_by_id(id)
             .one(&self.db.connection())
             .await?
-            .ok_or_else(|| AppError::NotFound("Reporte no encontrado".into()))?;
+            .ok_or_else(|| AppError::NotFound("Soporte no encontrado".into()))?;
 
-        let estado_anterior = reporte.estado.clone();
+        let estado_anterior = soportes.estado.clone();
         let estado_nuevo = cambio.estado_nuevo.clone();
 
-        let mut reporte: reporte_error::ActiveModel = reporte.into();
-        reporte.estado = Set(estado_nuevo.clone());
-        reporte.updated_at = Set(Some(Utc::now()));
+        let mut soportes: soporte::ActiveModel = soportes.into();
+        soportes.estado = Set(estado_nuevo.clone());
+        soportes.updated_at = Set(Some(Utc::now()));
 
         // Si se resuelve, guardar fecha y solución
-        if estado_nuevo == EstadoReporte::Resuelto {
-            reporte.fecha_resolucion = Set(Some(Utc::now()));
+        if estado_nuevo == EstadoSoporte::Resuelto {
+            soportes.fecha_resolucion = Set(Some(Utc::now()));
             if let Some(solucion) = &cambio.solucion {
-                reporte.solucion = Set(Some(solucion.clone()));
+                soportes.solucion = Set(Some(solucion.clone()));
             }
         }
 
         // Si se reabre, limpiar fecha de resolución
-        if estado_nuevo == EstadoReporte::Recibido && estado_anterior == EstadoReporte::Resuelto {
-            reporte.fecha_resolucion = Set(None);
+        if estado_nuevo == EstadoSoporte::Recibido && estado_anterior == EstadoSoporte::Resuelto {
+            soportes.fecha_resolucion = Set(None);
         }
 
-        let reporte_actualizado = reporte.update(&self.db.connection()).await?;
+        let soportes_actualizado = soportes.update(&self.db.connection()).await?;
 
         // Determinar tipo de seguimiento
         let tipo_seguimiento = match (&estado_anterior, &estado_nuevo) {
-            (_, EstadoReporte::Resuelto) => TipoSeguimiento::Resolucion,
-            (EstadoReporte::Resuelto, _) => TipoSeguimiento::Reapertura,
-            _ => TipoSeguimiento::CambioEstado,
+            (_, EstadoSoporte::Resuelto) => TipoSeguimientoSoporte::Resolucion,
+            (EstadoSoporte::Resuelto, _) => TipoSeguimientoSoporte::Reapertura,
+            _ => TipoSeguimientoSoporte::CambioEstado,
         };
 
         let comentario = cambio
@@ -299,7 +299,7 @@ impl ReporteErrorService {
             .unwrap_or_else(|| format!("Estado cambiado a: {:?}", estado_nuevo));
 
         self.crear_seguimiento_interno(
-            reporte_actualizado.id,
+            soportes_actualizado.id,
             cambio.usuario_id,
             tipo_seguimiento,
             comentario,
@@ -308,48 +308,48 @@ impl ReporteErrorService {
         )
         .await?;
 
-        Ok(reporte_actualizado)
+        Ok(soportes_actualizado)
     }
 
-    /// Asignar responsable a un reporte
+    /// Asignar responsable a un soportes
     pub async fn asignar_responsable(
         &self,
         id: i32,
         asignacion: AsignarResponsableRequest,
         usuario_accion: Option<i32>,
-    ) -> Result<ReporteErrorModel, AppError> {
-        let reporte = ReporteError::find_by_id(id)
+    ) -> Result<SoporteErrorModel, AppError> {
+        let soportes = SoporteError::find_by_id(id)
             .one(&self.db.connection())
             .await?
-            .ok_or_else(|| AppError::NotFound("Reporte no encontrado".into()))?;
+            .ok_or_else(|| AppError::NotFound("Soporte no encontrado".into()))?;
 
-        let mut reporte: reporte_error::ActiveModel = reporte.into();
-        reporte.responsable_id = Set(Some(asignacion.responsable_id));
-        reporte.updated_at = Set(Some(Utc::now()));
+        let mut soportes: soporte::ActiveModel = soportes.into();
+        soportes.responsable_id = Set(Some(asignacion.responsable_id));
+        soportes.updated_at = Set(Some(Utc::now()));
 
         // Si no tiene estado asignado, cambiar a "en_revision"
-        let estado_actual = reporte.estado.clone();
-        if estado_actual.as_ref() == &EstadoReporte::Recibido {
-            reporte.estado = Set(EstadoReporte::EnRevision);
+        let estado_actual = soportes.estado.clone();
+        if estado_actual.as_ref() == &EstadoSoporte::Recibido {
+            soportes.estado = Set(EstadoSoporte::EnRevision);
         }
 
-        let reporte_actualizado = reporte.update(&self.db.connection()).await?;
+        let soportes_actualizado = soportes.update(&self.db.connection()).await?;
 
         let comentario = asignacion.comentario.unwrap_or_else(|| {
             format!("Responsable asignado: usuario {}", asignacion.responsable_id)
         });
 
         self.crear_seguimiento_interno(
-            reporte_actualizado.id,
+            soportes_actualizado.id,
             usuario_accion,
-            TipoSeguimiento::Asignacion,
+            TipoSeguimientoSoporte::Asignacion,
             comentario,
             None,
             None,
         )
         .await?;
 
-        Ok(reporte_actualizado)
+        Ok(soportes_actualizado)
     }
 
     // ==================== SEGUIMIENTO ====================
@@ -357,21 +357,21 @@ impl ReporteErrorService {
     /// Crear seguimiento manual (comentario)
     pub async fn crear_seguimiento(
         &self,
-        seguimiento: NuevoSeguimientoReporte,
+        seguimiento: NuevoSeguimientoSoporte,
     ) -> Result<SeguimientoModel, AppError> {
         if seguimiento.comentario.trim().is_empty() {
             return Err(AppError::BadRequest("El comentario es obligatorio".into()));
         }
 
-        // Verificar que el reporte existe
-        let _reporte = ReporteError::find_by_id(seguimiento.reporte_id)
+        // Verificar que el soportes existe
+        let _soportes = SoporteError::find_by_id(seguimiento.soporte_id)
             .one(&self.db.connection())
             .await?
-            .ok_or_else(|| AppError::NotFound("Reporte no encontrado".into()))?;
+            .ok_or_else(|| AppError::NotFound("Soporte no encontrado".into()))?;
 
         let ahora = Utc::now();
-        let nuevo_seguimiento = seguimiento_reporte::ActiveModel {
-            reporte_id: Set(seguimiento.reporte_id),
+        let nuevo_seguimiento = soporte_seguimiento::ActiveModel {
+            soporte_id: Set(seguimiento.soporte_id),
             usuario_id: Set(seguimiento.usuario_id),
             tipo: Set(seguimiento.tipo),
             comentario: Set(seguimiento.comentario.trim().to_string()),
@@ -388,16 +388,16 @@ impl ReporteErrorService {
     /// Crear seguimiento interno (usado por otros métodos)
     async fn crear_seguimiento_interno(
         &self,
-        reporte_id: i32,
+        soporte_id: i32,
         usuario_id: Option<i32>,
-        tipo: TipoSeguimiento,
+        tipo: TipoSeguimientoSoporte,
         comentario: String,
-        estado_anterior: Option<EstadoReporte>,
-        estado_nuevo: Option<EstadoReporte>,
+        estado_anterior: Option<EstadoSoporte>,
+        estado_nuevo: Option<EstadoSoporte>,
     ) -> Result<SeguimientoModel, AppError> {
         let ahora = Utc::now();
-        let seguimiento = seguimiento_reporte::ActiveModel {
-            reporte_id: Set(reporte_id),
+        let seguimiento = soporte_seguimiento::ActiveModel {
+            soporte_id: Set(soporte_id),
             usuario_id: Set(usuario_id),
             tipo: Set(tipo),
             comentario: Set(comentario),
@@ -411,21 +411,21 @@ impl ReporteErrorService {
         Ok(seguimiento_creado)
     }
 
-    /// Obtener seguimientos de un reporte
+    /// Obtener seguimientos de un soportes
     pub async fn obtener_seguimientos(
         &self,
-        reporte_id: i32,
+        soporte_id: i32,
         limit: Option<u64>,
     ) -> Result<Vec<SeguimientoModel>, AppError> {
-        // Verificar que el reporte existe
-        let _reporte = ReporteError::find_by_id(reporte_id)
+        // Verificar que el soportes existe
+        let _soportes = SoporteError::find_by_id(soporte_id)
             .one(&self.db.connection())
             .await?
-            .ok_or_else(|| AppError::NotFound("Reporte no encontrado".into()))?;
+            .ok_or_else(|| AppError::NotFound("Soporte no encontrado".into()))?;
 
-        let mut query = SeguimientoReporte::find()
-            .filter(seguimiento_reporte::Column::ReporteId.eq(reporte_id))
-            .order_by_desc(seguimiento_reporte::Column::CreatedAt);
+        let mut query = SeguimientoSoporte::find()
+            .filter(soporte_seguimiento::Column::SoporteId.eq(soporte_id))
+            .order_by_desc(soporte_seguimiento::Column::CreatedAt);
 
         if let Some(l) = limit {
             query = query.limit(l);
@@ -437,44 +437,44 @@ impl ReporteErrorService {
 
     // ==================== ESTADÍSTICAS ====================
 
-    /// Obtener estadísticas de reportes
+    /// Obtener estadísticas de soportes
     pub async fn obtener_estadisticas(
         &self,
     ) -> Result<EstadisticasReportes, AppError> {
-        let total = ReporteError::find().count(&self.db.connection()).await?;
+        let total = SoporteError::find().count(&self.db.connection()).await?;
 
-        let recibidos = ReporteError::find()
-            .filter(reporte_error::Column::Estado.eq(EstadoReporte::Recibido))
+        let recibidos = SoporteError::find()
+            .filter(soporte::Column::Estado.eq(EstadoSoporte::Recibido))
             .count(&self.db.connection())
             .await?;
 
-        let en_revision = ReporteError::find()
-            .filter(reporte_error::Column::Estado.eq(EstadoReporte::EnRevision))
+        let en_revision = SoporteError::find()
+            .filter(soporte::Column::Estado.eq(EstadoSoporte::EnRevision))
             .count(&self.db.connection())
             .await?;
 
-        let en_desarrollo = ReporteError::find()
-            .filter(reporte_error::Column::Estado.eq(EstadoReporte::EnDesarrollo))
+        let en_desarrollo = SoporteError::find()
+            .filter(soporte::Column::Estado.eq(EstadoSoporte::EnDesarrollo))
             .count(&self.db.connection())
             .await?;
 
-        let resueltos = ReporteError::find()
-            .filter(reporte_error::Column::Estado.eq(EstadoReporte::Resuelto))
+        let resueltos = SoporteError::find()
+            .filter(soporte::Column::Estado.eq(EstadoSoporte::Resuelto))
             .count(&self.db.connection())
             .await?;
 
-        let rechazados = ReporteError::find()
-            .filter(reporte_error::Column::Estado.eq(EstadoReporte::Rechazado))
+        let rechazados = SoporteError::find()
+            .filter(soporte::Column::Estado.eq(EstadoSoporte::Rechazado))
             .count(&self.db.connection())
             .await?;
 
-        let criticos = ReporteError::find()
-            .filter(reporte_error::Column::Prioridad.eq(PrioridadReporte::Critica))
+        let criticos = SoporteError::find()
+            .filter(soporte::Column::Prioridad.eq(PrioridadSoporte::Critica))
             .filter(
-                reporte_error::Column::Estado.is_not_in([
-                    EstadoReporte::Resuelto,
-                    EstadoReporte::Rechazado,
-                    EstadoReporte::Cerrado,
+                soporte::Column::Estado.is_not_in([
+                    EstadoSoporte::Resuelto,
+                    EstadoSoporte::Rechazado,
+                    EstadoSoporte::Cerrado,
                 ]),
             )
             .count(&self.db.connection())

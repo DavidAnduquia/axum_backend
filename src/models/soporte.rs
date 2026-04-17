@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 // ==================== ENUMS ====================
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "tipo_reporte")]
-pub enum TipoReporte {
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "tipo_soporte")]
+pub enum TipoSoporte {
     #[sea_orm(string_value = "error")]
     Error,
     #[sea_orm(string_value = "sugerencia")]
@@ -18,8 +18,8 @@ pub enum TipoReporte {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "estado_reporte")]
-pub enum EstadoReporte {
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "estado_soporte")]
+pub enum EstadoSoporte {
     #[sea_orm(string_value = "recibido")]
     Recibido,
     #[sea_orm(string_value = "en_revision")]
@@ -35,8 +35,8 @@ pub enum EstadoReporte {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "prioridad_reporte")]
-pub enum PrioridadReporte {
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "prioridad_soporte")]
+pub enum PrioridadSoporte {
     #[sea_orm(string_value = "baja")]
     Baja,
     #[sea_orm(string_value = "media")]
@@ -48,8 +48,8 @@ pub enum PrioridadReporte {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "tipo_seguimiento")]
-pub enum TipoSeguimiento {
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "tipo_soporte_seguimiento")]
+pub enum TipoSeguimientoSoporte {
     #[sea_orm(string_value = "cambio_estado")]
     CambioEstado,
     #[sea_orm(string_value = "comentario")]
@@ -67,16 +67,16 @@ pub enum TipoSeguimiento {
 // ==================== REPORTE ERROR ENTITY ====================
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "reportes_errores", schema_name = "rustdema2")]
+#[sea_orm(table_name = "soportes", schema_name = "rustdema2")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = true)]
     pub id: i32,
     pub usuario_id: Option<i32>,
     pub titulo: String,
     pub descripcion: String,
-    pub tipo: TipoReporte,
-    pub prioridad: PrioridadReporte,
-    pub estado: EstadoReporte,
+    pub tipo: TipoSoporte,
+    pub prioridad: PrioridadSoporte,
+    pub estado: EstadoSoporte,
     pub captura_url: Option<String>,
     pub responsable_id: Option<i32>,
     pub fecha_resolucion: Option<DateTime<Utc>>,
@@ -107,45 +107,42 @@ pub enum Relation {
 
 impl ActiveModelBehavior for ActiveModel {}
 
-// Alias para usar fuera del módulo
-pub type ReporteErrorModel = Model;
-
 // ==================== DTOs PARA CREAR/ACTUALIZAR ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NuevoReporteError {
+pub struct NuevoSoporteError {
     pub usuario_id: Option<i32>,
     pub titulo: String,
     pub descripcion: String,
-    pub tipo: TipoReporte,
-    pub prioridad: Option<PrioridadReporte>,
+    pub tipo: TipoSoporte,
+    pub prioridad: Option<PrioridadSoporte>,
     pub captura_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActualizarReporteError {
+pub struct ActualizarSoporteError {
     pub titulo: Option<String>,
     pub descripcion: Option<String>,
-    pub prioridad: Option<PrioridadReporte>,
-    pub estado: Option<EstadoReporte>,
+    pub prioridad: Option<PrioridadSoporte>,
+    pub estado: Option<EstadoSoporte>,
     pub captura_url: Option<String>,
     pub responsable_id: Option<i32>,
     pub solucion: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NuevoSeguimientoReporte {
-    pub reporte_id: i32,
+pub struct NuevoSeguimientoSoporte {
+    pub soporte_id: i32,
     pub usuario_id: Option<i32>,
-    pub tipo: TipoSeguimiento,
+    pub tipo: TipoSeguimientoSoporte,
     pub comentario: String,
-    pub estado_anterior: Option<EstadoReporte>,
-    pub estado_nuevo: Option<EstadoReporte>,
+    pub estado_anterior: Option<EstadoSoporte>,
+    pub estado_nuevo: Option<EstadoSoporte>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CambiarEstadoReporte {
-    pub estado_nuevo: EstadoReporte,
+pub struct CambiarEstadoSoporte {
+    pub estado_nuevo: EstadoSoporte,
     pub comentario: Option<String>,
     pub usuario_id: Option<i32>,
     pub solucion: Option<String>,
@@ -157,22 +154,22 @@ pub struct AsignarResponsableRequest {
     pub comentario: Option<String>,
 }
 
-// ==================== SEGUIMIENTO REPORTE MODULE ====================
+// ==================== SEGUIMIENTO SOPORTE MODULE ====================
 
-pub mod seguimiento_reporte {
+pub mod soporte_seguimiento {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-    #[sea_orm(table_name = "seguimiento_reportes", schema_name = "rustdema2")]
+    #[sea_orm(table_name = "soportes_seguimiento", schema_name = "rustdema2")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = true)]
         pub id: i32,
-        pub reporte_id: i32,
+        pub soporte_id: i32,
         pub usuario_id: Option<i32>,
-        pub tipo: TipoSeguimiento,
+        pub tipo: TipoSeguimientoSoporte,
         pub comentario: String,
-        pub estado_anterior: Option<EstadoReporte>,
-        pub estado_nuevo: Option<EstadoReporte>,
+        pub estado_anterior: Option<EstadoSoporte>,
+        pub estado_nuevo: Option<EstadoSoporte>,
         #[sea_orm(column_name = "fecha_creacion")]
         pub created_at: Option<DateTime<Utc>>,
     }
@@ -181,11 +178,11 @@ pub mod seguimiento_reporte {
     pub enum Relation {
         #[sea_orm(
             belongs_to = "super::Entity",
-            from = "Column::ReporteId",
+            from = "Column::SoporteId",
             to = "super::Column::Id",
             on_delete = "Cascade"
         )]
-        Reporte,
+        Soporte,
         #[sea_orm(
             belongs_to = "super::super::usuario::Entity",
             from = "Column::UsuarioId",

@@ -9,24 +9,24 @@ use serde_json::{json, Value};
 use crate::{
     middleware::auth::AuthUser,
     models::{
-        reporte_error::{
-            ActualizarReporteError, AsignarResponsableRequest, CambiarEstadoReporte,
-            EstadoReporte, NuevoReporteError, NuevoSeguimientoReporte,
-            PrioridadReporte, TipoReporte, TipoSeguimiento,
+        soporte::{
+            ActualizarSoporteError, AsignarResponsableRequest, CambiarEstadoSoporte,
+            EstadoSoporte, NuevoSoporteError, NuevoSeguimientoSoporte,
+            PrioridadSoporte, TipoSoporte, TipoSeguimientoSoporte,
         },
         AppState,
     },
-    services::reporte_error_service::ReporteErrorService,
+    services::soporte_service::SoporteService,
     utils::errors::AppError,
 };
 
 // ==================== DTOs PARA REQUESTS ====================
 
 #[derive(Debug, Deserialize)]
-pub struct ListarReportesQuery {
-    pub estado: Option<EstadoReporte>,
-    pub tipo: Option<TipoReporte>,
-    pub prioridad: Option<PrioridadReporte>,
+pub struct ListarSoportesQuery {
+    pub estado: Option<EstadoSoporte>,
+    pub tipo: Option<TipoSoporte>,
+    pub prioridad: Option<PrioridadSoporte>,
     pub usuario_id: Option<i32>,
     pub responsable_id: Option<i32>,
     pub limit: Option<u64>,
@@ -34,8 +34,8 @@ pub struct ListarReportesQuery {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ListaReportesResponse {
-    pub reportes: Vec<Value>,
+pub struct ListaSoportesResponse {
+    pub soportes: Vec<Value>,
     pub total: u64,
 }
 
@@ -46,7 +46,7 @@ pub struct SeguimientosResponse {
 
 // ==================== SERIALIZADORES ====================
 
-fn serialize_reporte<T: Serialize>(r: &T) -> Value {
+fn serialize_soporte<T: Serialize>(r: &T) -> Value {
     json!(r)
 }
 
@@ -57,54 +57,54 @@ fn serialize_seguimiento<T: Serialize>(s: &T) -> Value {
 // ==================== HANDLERS - CRUD BÁSICO ====================
 
 /// Crear un nuevo reporte de error/sugerencia
-pub async fn crear_reporte(
+pub async fn crear_soporte(
     auth_user: AuthUser,
     State(state): State<AppState>,
-    Json(mut payload): Json<NuevoReporteError>,
+    Json(mut payload): Json<NuevoSoporteError>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     // Establecer el usuario_id del usuario autenticado
     payload.usuario_id = Some(auth_user.user_id);
 
-    let reporte = service.crear_reporte(payload).await?;
+    let reporte = service.crear_soporte(payload).await?;
 
     Ok((
         StatusCode::CREATED,
         Json(json!({
             "success": true,
-            "data": serialize_reporte(&reporte),
+            "data": serialize_soporte(&reporte),
             "message": "Reporte creado exitosamente"
         })),
     ))
 }
 
 /// Obtener un reporte por ID
-pub async fn obtener_reporte(
+pub async fn obtener_soporte(
     _auth_user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     let reporte = service.obtener_por_id(id).await?;
 
     Ok(Json(json!({
         "success": true,
-        "data": serialize_reporte(&reporte)
+        "data": serialize_soporte(&reporte)
     })))
 }
 
-/// Listar reportes con filtros
-pub async fn listar_reportes(
+/// Listar soportes con filtros
+pub async fn listar_soportes(
     _auth_user: AuthUser,
     State(state): State<AppState>,
-    Query(params): Query<ListarReportesQuery>,
-) -> Result<Json<ListaReportesResponse>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    Query(params): Query<ListarSoportesQuery>,
+) -> Result<Json<ListaSoportesResponse>, AppError> {
+    let service = SoporteService::from_ref(&state);
 
-    let (reportes, total) = service
-        .listar_reportes(
+    let (soportes, total) = service
+        .listar_soportes(
             params.estado,
             params.tipo,
             params.prioridad,
@@ -115,45 +115,45 @@ pub async fn listar_reportes(
         )
         .await?;
 
-    let reportes_json: Vec<Value> = reportes.iter().map(serialize_reporte).collect();
+    let soportes_json: Vec<Value> = soportes.iter().map(serialize_soporte).collect();
 
-    Ok(Json(ListaReportesResponse {
-        reportes: reportes_json,
+    Ok(Json(ListaSoportesResponse {
+        soportes: soportes_json,
         total,
     }))
 }
 
 /// Actualizar un reporte
-pub async fn actualizar_reporte(
+pub async fn actualizar_soporte(
     auth_user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<i32>,
-    Json(payload): Json<ActualizarReporteError>,
+    Json(payload): Json<ActualizarSoporteError>,
 ) -> Result<Json<Value>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     let usuario_accion = Some(auth_user.user_id);
 
     let reporte = service
-        .actualizar_reporte(id, payload, usuario_accion)
+        .actualizar_soporte(id, payload, usuario_accion)
         .await?;
 
     Ok(Json(json!({
         "success": true,
-        "data": serialize_reporte(&reporte),
+        "data": serialize_soporte(&reporte),
         "message": "Reporte actualizado exitosamente"
     })))
 }
 
 /// Eliminar un reporte
-pub async fn eliminar_reporte(
+pub async fn eliminar_soporte(
     _auth_user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
-    service.eliminar_reporte(id).await?;
+    service.eliminar_soporte(id).await?;
 
     Ok(Json(json!({
         "success": true,
@@ -163,14 +163,14 @@ pub async fn eliminar_reporte(
 
 // ==================== HANDLERS - LÓGICA DE NEGOCIO ====================
 
-/// Cambiar estado de un reporte
-pub async fn cambiar_estado_reporte(
+/// Cambiar estado de un soporte
+pub async fn cambiar_estado_soporte(
     auth_user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<i32>,
-    Json(mut payload): Json<CambiarEstadoReporte>,
+    Json(mut payload): Json<CambiarEstadoSoporte>,
 ) -> Result<Json<Value>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     payload.usuario_id = Some(auth_user.user_id);
 
@@ -178,7 +178,7 @@ pub async fn cambiar_estado_reporte(
 
     Ok(Json(json!({
         "success": true,
-        "data": serialize_reporte(&reporte),
+        "data": serialize_soporte(&reporte),
         "message": "Estado del reporte actualizado"
     })))
 }
@@ -190,7 +190,7 @@ pub async fn asignar_responsable(
     Path(id): Path<i32>,
     Json(payload): Json<AsignarResponsableRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     let usuario_accion = Some(auth_user.user_id);
 
@@ -200,7 +200,7 @@ pub async fn asignar_responsable(
 
     Ok(Json(json!({
         "success": true,
-        "data": serialize_reporte(&reporte),
+        "data": serialize_soporte(&reporte),
         "message": "Responsable asignado exitosamente"
     })))
 }
@@ -212,16 +212,16 @@ pub async fn crear_seguimiento(
     auth_user: AuthUser,
     State(state): State<AppState>,
     Path(reporte_id): Path<i32>,
-    Json(mut payload): Json<NuevoSeguimientoReporte>,
+    Json(mut payload): Json<NuevoSeguimientoSoporte>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     // Asignar el reporte_id de la URL y el usuario_id del autenticado
-    payload.reporte_id = reporte_id;
+    payload.soporte_id = reporte_id;
     payload.usuario_id = Some(auth_user.user_id);
 
     // Si no se especifica tipo, usar Comentario por defecto
-    if matches!(payload.tipo, TipoSeguimiento::Otro) && payload.estado_nuevo.is_none() {
+    if matches!(payload.tipo, TipoSeguimientoSoporte::Otro) && payload.estado_nuevo.is_none() {
         // Mantener el tipo que venga o usar Comentario
     }
 
@@ -242,9 +242,9 @@ pub async fn obtener_seguimientos(
     _auth_user: AuthUser,
     State(state): State<AppState>,
     Path(reporte_id): Path<i32>,
-    Query(params): Query<ListarReportesQuery>,
+    Query(params): Query<ListarSoportesQuery>,
 ) -> Result<Json<SeguimientosResponse>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     let seguimientos = service
         .obtener_seguimientos(reporte_id, params.limit)
@@ -259,12 +259,12 @@ pub async fn obtener_seguimientos(
 
 // ==================== HANDLERS - ESTADÍSTICAS ====================
 
-/// Obtener estadísticas de reportes
+/// Obtener estadísticas de soportes
 pub async fn obtener_estadisticas(
     _auth_user: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Value>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    let service = SoporteService::from_ref(&state);
 
     let stats = service.obtener_estadisticas().await?;
 
@@ -286,20 +286,20 @@ pub async fn obtener_estadisticas(
 
 // ==================== HANDLERS - MIS REPORTES ====================
 
-/// Obtener reportes del usuario actual
-pub async fn mis_reportes(
+/// Obtener soportes del usuario actual
+pub async fn mis_soportes(
     auth_user: AuthUser,
     State(state): State<AppState>,
-    Query(params): Query<ListarReportesQuery>,
-) -> Result<Json<ListaReportesResponse>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    Query(params): Query<ListarSoportesQuery>,
+) -> Result<Json<ListaSoportesResponse>, AppError> {
+    let service = SoporteService::from_ref(&state);
 
     // Extraer usuario_id del token JWT
     // Asumiendo que AuthUser tiene el user_id
     let usuario_id = extract_user_id(&auth_user);
 
-    let (reportes, total) = service
-        .listar_reportes(
+    let (soportes, total) = service
+        .listar_soportes(
             params.estado,
             params.tipo,
             params.prioridad,
@@ -310,27 +310,27 @@ pub async fn mis_reportes(
         )
         .await?;
 
-    let reportes_json: Vec<Value> = reportes.iter().map(serialize_reporte).collect();
+    let soportes_json: Vec<Value> = soportes.iter().map(serialize_soporte).collect();
 
-    Ok(Json(ListaReportesResponse {
-        reportes: reportes_json,
+    Ok(Json(ListaSoportesResponse {
+        soportes: soportes_json,
         total,
     }))
 }
 
 /// Reportes asignados al usuario (para responsables)
-pub async fn reportes_asignados(
+pub async fn soportes_asignados(
     auth_user: AuthUser,
     State(state): State<AppState>,
-    Query(params): Query<ListarReportesQuery>,
-) -> Result<Json<ListaReportesResponse>, AppError> {
-    let service = ReporteErrorService::from_ref(&state);
+    Query(params): Query<ListarSoportesQuery>,
+) -> Result<Json<ListaSoportesResponse>, AppError> {
+    let service = SoporteService::from_ref(&state);
 
     // Extraer usuario_id del token JWT
     let responsable_id = extract_user_id(&auth_user);
 
-    let (reportes, total) = service
-        .listar_reportes(
+    let (soportes, total) = service
+        .listar_soportes(
             params.estado,
             params.tipo,
             params.prioridad,
@@ -341,10 +341,10 @@ pub async fn reportes_asignados(
         )
         .await?;
 
-    let reportes_json: Vec<Value> = reportes.iter().map(serialize_reporte).collect();
+    let soportes_json: Vec<Value> = soportes.iter().map(serialize_soporte).collect();
 
-    Ok(Json(ListaReportesResponse {
-        reportes: reportes_json,
+    Ok(Json(ListaSoportesResponse {
+        soportes: soportes_json,
         total,
     }))
 }

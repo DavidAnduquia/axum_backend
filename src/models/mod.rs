@@ -26,7 +26,7 @@ pub mod modulo;
 pub mod modulo_archivo;
 pub mod notificacion;
 pub mod personalizacion_portafolio;
-pub mod reporte_error;
+pub mod soporte;
 pub mod plantilla_curso;
 pub mod portafolio;
 pub mod portafolio_contenido;

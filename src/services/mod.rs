@@ -24,7 +24,7 @@ pub mod contenido_unidad_service;
 pub mod notificacion_service;
 pub mod portafolio_service;
 pub mod portafolio_contenido_service;
-pub mod reporte_error_service;
+pub mod soporte_service;
 pub mod personalizacion_portafolio_service;
 // pub mod pregunta_examen_service;
 // pub mod profesor_curso_service;

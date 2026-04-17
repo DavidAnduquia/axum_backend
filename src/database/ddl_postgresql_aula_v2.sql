@@ -6,9 +6,7 @@
 -- =============================================
 
 -- rustdema2.areas_conocimiento definition
-
 -- Drop table
-
 -- DROP TABLE rustdema2.areas_conocimiento;
 
 CREATE OR REPLACE FUNCTION actualizar_fecha_modificacion()
@@ -1220,20 +1218,20 @@ update
     rustdema2.dias_festivos for each row execute function rustdema2.actualizar_fecha_modificacion();
 
 
--- rustdema2.reportes_errores definition
+-- rustdema2.soportes definition
 
 -- Drop table
 
--- DROP TABLE rustdema2.reportes_errores;
+-- DROP TABLE rustdema2.soportes;
 
-CREATE TYPE rustdema2.tipo_reporte AS ENUM (
+CREATE TYPE rustdema2.tipo_soporte AS ENUM (
     'error',
     'sugerencia',
     'mejora',
     'otro'
 );
 
-CREATE TYPE rustdema2.estado_reporte AS ENUM (
+CREATE TYPE rustdema2.estado_soporte AS ENUM (
     'recibido',
     'en_revision',
     'en_desarrollo',
@@ -1242,50 +1240,14 @@ CREATE TYPE rustdema2.estado_reporte AS ENUM (
     'cerrado'
 );
 
-CREATE TYPE rustdema2.prioridad_reporte AS ENUM (
+CREATE TYPE rustdema2.prioridad_soporte AS ENUM (
     'baja',
     'media',
     'alta',
     'critica'
 );
 
-CREATE TABLE rustdema2.reportes_errores (
-	id serial4 NOT NULL,
-	usuario_id int4 NULL,
-	titulo varchar(200) NOT NULL,
-	descripcion text NOT NULL,
-	tipo rustdema2.tipo_reporte DEFAULT 'error' NOT NULL,
-	prioridad rustdema2.prioridad_reporte DEFAULT 'media' NOT NULL,
-	estado rustdema2.estado_reporte DEFAULT 'recibido' NOT NULL,
-	captura_url text NULL,
-	responsable_id int4 NULL,
-	fecha_resolucion timestamptz NULL,
-	solucion text NULL,
-	fecha_creacion timestamptz DEFAULT now() NULL,
-	fecha_actualizacion timestamptz DEFAULT now() NULL,
-	CONSTRAINT reportes_errores_pkey PRIMARY KEY (id),
-	CONSTRAINT reportes_errores_responsable_id_fkey FOREIGN KEY (responsable_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL,
-	CONSTRAINT reportes_errores_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL
-);
-CREATE INDEX idx_reportes_estado ON rustdema2.reportes_errores USING btree (estado);
-CREATE INDEX idx_reportes_usuario ON rustdema2.reportes_errores USING btree (usuario_id);
-CREATE INDEX idx_reportes_prioridad ON rustdema2.reportes_errores USING btree (prioridad, estado);
-
--- Table Triggers
-
-create trigger actualizar_reportes_errores_modtime before
-update
-    on
-    rustdema2.reportes_errores for each row execute function rustdema2.actualizar_fecha_modificacion();
-
-
--- rustdema2.seguimiento_reportes definition
-
--- Drop table
-
--- DROP TABLE rustdema2.seguimiento_reportes;
-
-CREATE TYPE rustdema2.tipo_seguimiento AS ENUM (
+CREATE TYPE rustdema2.tipo_soporte_seguimiento AS ENUM (
     'cambio_estado',
     'comentario',
     'asignacion',
@@ -1294,28 +1256,65 @@ CREATE TYPE rustdema2.tipo_seguimiento AS ENUM (
     'otro'
 );
 
-CREATE TABLE rustdema2.seguimiento_reportes (
+CREATE TABLE rustdema2.soportes (
 	id serial4 NOT NULL,
-	reporte_id int4 NOT NULL,
 	usuario_id int4 NULL,
-	tipo rustdema2.tipo_seguimiento DEFAULT 'comentario' NOT NULL,
-	comentario text NOT NULL,
-	estado_anterior rustdema2.estado_reporte NULL,
-	estado_nuevo rustdema2.estado_reporte NULL,
+	titulo varchar(200) NOT NULL,
+	descripcion text NOT NULL,
+	tipo rustdema2.tipo_soporte DEFAULT 'error' NOT NULL,
+	prioridad rustdema2.prioridad_soporte DEFAULT 'media' NOT NULL,
+	estado rustdema2.estado_soporte DEFAULT 'recibido' NOT NULL,
+	captura_url text NULL,
+	responsable_id int4 NULL,
+	fecha_resolucion timestamptz NULL,
+	solucion text NULL,
 	fecha_creacion timestamptz DEFAULT now() NULL,
-	CONSTRAINT seguimiento_reportes_pkey PRIMARY KEY (id),
-	CONSTRAINT seguimiento_reportes_reporte_id_fkey FOREIGN KEY (reporte_id) REFERENCES rustdema2.reportes_errores(id) ON DELETE CASCADE,
-	CONSTRAINT seguimiento_reportes_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL
+	fecha_actualizacion timestamptz DEFAULT now() NULL,
+ 	CONSTRAINT soportes_pkey PRIMARY KEY (id),
+	CONSTRAINT soportes_responsable_id_fkey FOREIGN KEY (responsable_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL,
+	CONSTRAINT soportes_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL
 );
-CREATE INDEX idx_seguimiento_reporte ON rustdema2.seguimiento_reportes USING btree (reporte_id, fecha_creacion DESC);
-CREATE INDEX idx_seguimiento_usuario ON rustdema2.seguimiento_reportes USING btree (usuario_id);
+
+CREATE INDEX idx_soportes_estado ON rustdema2.soportes USING btree (estado);
+CREATE INDEX idx_soportes_usuario ON rustdema2.soportes USING btree (usuario_id);
+CREATE INDEX idx_soportes_prioridad ON rustdema2.soportes USING btree (prioridad, estado);
 
 -- Table Triggers
 
-create trigger actualizar_seguimiento_reportes_modtime before
+create trigger actualizar_soportes_modtime before
 update
     on
-    rustdema2.seguimiento_reportes for each row execute function rustdema2.actualizar_fecha_modificacion();
+    rustdema2.soportes for each row execute function rustdema2.actualizar_fecha_modificacion();
+
+
+-- rustdema2.soportes_seguimiento definition
+
+-- Drop table
+
+-- DROP TABLE rustdema2.soportes_seguimiento;
+
+CREATE TABLE rustdema2.soportes_seguimiento (
+	id serial4 NOT NULL,
+	soporte_id int4 NOT NULL,
+	usuario_id int4 NULL,
+	tipo rustdema2.tipo_soporte_seguimiento DEFAULT 'comentario' NOT NULL,
+	comentario text NOT NULL,
+	estado_anterior rustdema2.estado_soporte NULL,
+	estado_nuevo rustdema2.estado_soporte NULL,
+	fecha_creacion timestamptz DEFAULT now() NULL,
+	CONSTRAINT soportes_seguimiento_pkey PRIMARY KEY (id),
+	CONSTRAINT soportes_soporte_seguimiento_id_fkey FOREIGN KEY (soporte_id) REFERENCES rustdema2.soportes(id) ON DELETE CASCADE,
+	CONSTRAINT soportes_seguimiento_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES rustdema2.usuarios(id) ON DELETE SET NULL
+);
+CREATE INDEX idx_soporte_seguimiento ON rustdema2.soportes_seguimiento USING btree (soporte_id, fecha_creacion DESC);
+CREATE INDEX idx_seguimiento_usuario ON rustdema2.soportes_seguimiento USING btree (usuario_id);
+
+-- Table Triggers
+
+create trigger actualizar_soportes_seguimiento_modtime before
+update
+    on
+    rustdema2.soportes_seguimiento for each row execute function rustdema2.actualizar_fecha_modificacion();
 
 
 -- ============================================================================
